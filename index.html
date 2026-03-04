@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220">
+  <title>Numbers Game — Browser Edition</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Numbers Game</h1>
+    <p class="subtitle">Offline-first browser edition</p>
+  </header>
+
+  <main class="app-main">
+    <section class="panel board-panel">
+      <div class="board-toolbar">
+        <div class="toolbar-group">
+          <button id="open-controls-btn" class="icon-btn" title="Open controls" aria-label="Open controls">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8.75a3.25 3.25 0 1 0 0 6.5a3.25 3.25 0 0 0 0-6.5Z"/>
+              <path d="M4.5 12h1.9m11.2 0h1.9M12 4.5v1.9m0 11.2v1.9M6.7 6.7l1.35 1.35m7.9 7.9l1.35 1.35m0-10.6l-1.35 1.35m-7.9 7.9l-1.35 1.35"/>
+            </svg>
+          </button>
+          <button id="open-summary-btn" class="icon-btn" title="Open summary" aria-label="Open summary">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 19.25h16"/>
+              <rect x="6.25" y="11" width="2.8" height="6.25" rx="0.8" class="icon-solid"/>
+              <rect x="10.6" y="8.5" width="2.8" height="8.75" rx="0.8" class="icon-solid"/>
+              <rect x="14.95" y="6" width="2.8" height="11.25" rx="0.8" class="icon-solid"/>
+            </svg>
+          </button>
+          <button id="open-help-btn" class="icon-btn" title="Open help" aria-label="Open help">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.5"/>
+              <path d="M9.9 9.5a2.3 2.3 0 0 1 4.45.8c0 1.85-2.1 2.25-2.35 3.75"/>
+              <circle cx="12" cy="16.9" r="0.9" class="icon-solid"/>
+            </svg>
+          </button>
+        </div>
+        <div class="toolbar-group">
+          <button id="undo-btn" class="icon-btn" title="Undo" aria-label="Undo">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon-heavy">
+              <path d="M10 7.2L5.2 12L10 16.8"/>
+              <path d="M6 12h8.1c2.7 0 4.9 2.2 4.9 4.9v.3"/>
+            </svg>
+          </button>
+          <button id="redo-btn" class="icon-btn" title="Redo" aria-label="Redo">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon-heavy">
+              <path d="M14 7.2L18.8 12L14 16.8"/>
+              <path d="M18 12H9.9C7.2 12 5 14.2 5 16.9v.3"/>
+            </svg>
+          </button>
+          <span id="status-badge" class="status-badge">ACTIVE</span>
+        </div>
+      </div>
+      <p id="message-line" class="message-line" aria-live="polite"></p>
+      <div id="board" class="board" role="grid" aria-label="Numbers board"></div>
+      <div id="board-manual-actions" class="board-manual-actions">
+        <button id="board-save-round-btn" class="btn primary">Save Round / Append Remaining</button>
+      </div>
+      <p class="hint">
+        Tap two uncrossed cells to cross them. Use undo/redo for quick correction.
+      </p>
+    </section>
+  </main>
+
+  <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+
+  <aside id="controls-drawer" class="drawer hidden" aria-hidden="true">
+    <div class="drawer-header">
+      <h2>Controls</h2>
+      <button id="close-controls-btn" class="icon-btn" aria-label="Close controls" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <div class="control-group">
+        <label for="mode-select">Mode</label>
+        <select id="mode-select">
+          <option value="manual">Manual</option>
+          <option value="auto">Automatic</option>
+        </select>
+      </div>
+
+      <div id="manual-controls" class="mode-panel">
+        <h3>Manual Round</h3>
+        <label class="checkbox">
+          <input id="validate-toggle" type="checkbox" checked>
+          <span>Validate selected pair</span>
+        </label>
+        <label class="checkbox">
+          <input id="feedback-toggle" type="checkbox">
+          <span>Feedback before append (no hints)</span>
+        </label>
+        <div class="button-row">
+          <button id="save-round-btn" class="btn primary">Save Round / Append Remaining</button>
+        </div>
+      </div>
+
+      <div id="auto-controls" class="mode-panel hidden">
+        <h3>Automatic Play</h3>
+        <div class="control-group compact">
+          <label for="strategy-select">Strategy</label>
+          <select id="strategy-select">
+            <option value="search">search (default)</option>
+            <option value="max-future">max-future</option>
+            <option value="first">first</option>
+          </select>
+        </div>
+        <div class="control-group compact">
+          <label for="delay-range">Delay: <span id="delay-value">350 ms</span></label>
+          <input id="delay-range" type="range" min="0" max="1500" step="50" value="350">
+        </div>
+        <div class="button-row">
+          <button id="auto-step-btn" class="btn">Step</button>
+          <button id="auto-run-btn" class="btn primary">Run</button>
+          <button id="auto-stop-btn" class="btn danger" disabled>Stop</button>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="new-game-btn" class="btn primary">New Game</button>
+        <button id="install-btn" class="btn" hidden>Install App</button>
+      </div>
+
+      <details class="advanced">
+        <summary>Advanced Setup</summary>
+        <div class="control-group">
+          <label for="width-input">Board width (default 9)</label>
+          <div class="inline-controls">
+            <input id="width-input" type="number" min="3" max="18" step="1" value="9">
+            <button id="new-width-btn" class="btn">Start</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="control-group">
+        <button id="reset-storage-btn" class="btn subtle">Reset Local Save</button>
+      </div>
+    </div>
+  </aside>
+
+  <aside id="summary-drawer" class="drawer hidden" aria-hidden="true">
+    <div class="drawer-header">
+      <h2>Live Summary</h2>
+      <button id="close-summary-btn" class="icon-btn" aria-label="Close summary" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <dl class="summary-list">
+        <div><dt>Remaining digits</dt><dd id="summary-remaining">0</dd></div>
+        <div><dt>Board cells</dt><dd id="summary-cells">0</dd></div>
+        <div><dt>Pairs crossed</dt><dd id="summary-pairs">0</dd></div>
+        <div><dt>Append steps</dt><dd id="summary-appends">0</dd></div>
+        <div><dt>Elapsed</dt><dd id="summary-elapsed">00:00</dd></div>
+      </dl>
+    </div>
+  </aside>
+
+  <aside id="help-drawer" class="drawer hidden" aria-hidden="true">
+    <div class="drawer-header">
+      <h2>Help & About</h2>
+      <button id="close-help-btn" class="icon-btn" aria-label="Close help" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="drawer-body help-body">
+      <p><strong>Goal:</strong> cross all digits by pairing visible numbers that are equal or sum to 10.</p>
+      <ul>
+        <li>Visibility is in right/down directions and can pass over crossed cells.</li>
+        <li>End of row continues into start of next row (same as CLI rules).</li>
+        <li>Manual mode lets you play yourself with optional validation.</li>
+        <li>Feedback mode never reveals pair locations; it only blocks append when pairs still exist.</li>
+        <li>Auto mode supports strategies: <code>search</code>, <code>max-future</code>, <code>first</code>.</li>
+      </ul>
+      <p>This PWA is fully static and stores progress in your browser only.</p>
+    </div>
+  </aside>
+
+  <dialog id="summary-dialog">
+    <form method="dialog" class="dialog-card">
+      <h2>Game Summary</h2>
+      <p id="summary-result-line"></p>
+      <dl class="summary-list dialog-summary">
+        <div><dt>Status</dt><dd id="final-status">-</dd></div>
+        <div><dt>Pairs crossed</dt><dd id="final-pairs">0</dd></div>
+        <div><dt>Append steps</dt><dd id="final-appends">0</dd></div>
+        <div><dt>Total cells</dt><dd id="final-cells">0</dd></div>
+        <div><dt>Remaining</dt><dd id="final-remaining">0</dd></div>
+        <div><dt>Duration</dt><dd id="final-duration">00:00</dd></div>
+      </dl>
+      <div class="button-row dialog-buttons">
+        <button id="dialog-new-game-btn" value="new" class="btn primary">New Game</button>
+        <button value="close" class="btn">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

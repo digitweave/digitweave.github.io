@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Numbers Game icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#172554"/>
+    </linearGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="tileEq" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="tileSum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="76%" cy="17%" r="45%">
+      <stop offset="0%" stop-color="#67e8f9" stop-opacity=".46"/>
+      <stop offset="100%" stop-color="#67e8f9" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#020617" flood-opacity=".45"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="398" cy="108" r="172" fill="url(#glow)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="56" y="56" width="400" height="400" rx="92" fill="url(#frame)"/>
+    <rect x="76" y="76" width="360" height="360" rx="74" fill="#0b162d"/>
+  </g>
+
+  <g stroke="#334155" stroke-width="8" stroke-linecap="round">
+    <line x1="196" y1="108" x2="196" y2="404"/>
+    <line x1="316" y1="108" x2="316" y2="404"/>
+    <line x1="108" y1="196" x2="404" y2="196"/>
+    <line x1="108" y1="316" x2="404" y2="316"/>
+  </g>
+
+  <g stroke="#94a3b8" stroke-opacity=".22" stroke-width="4">
+    <rect x="96" y="96" width="112" height="112" rx="24" fill="#11213d"/>
+    <rect x="304" y="96" width="112" height="112" rx="24" fill="#11213d"/>
+    <rect x="200" y="200" width="112" height="112" rx="24" fill="#151f45"/>
+    <rect x="200" y="304" width="112" height="112" rx="24" fill="#151f45"/>
+  </g>
+
+  <rect x="96" y="96" width="112" height="112" rx="24" fill="url(#tileEq)"/>
+  <rect x="304" y="96" width="112" height="112" rx="24" fill="url(#tileEq)"/>
+  <rect x="200" y="200" width="112" height="112" rx="24" fill="url(#tileSum)"/>
+  <rect x="200" y="304" width="112" height="112" rx="24" fill="url(#tileSum)"/>
+
+  <g fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-weight="700" text-anchor="middle">
+    <text x="152" y="168" font-size="68">4</text>
+    <text x="360" y="168" font-size="68">4</text>
+    <text x="256" y="273" font-size="68">7</text>
+    <text x="256" y="377" font-size="68">3</text>
+  </g>
+
+  <path d="M165 146C225 109 287 109 347 146" fill="none" stroke="#67e8f9" stroke-width="10" stroke-linecap="round"/>
+  <path d="M333 218C366 245 366 371 333 398" fill="none" stroke="#c4b5fd" stroke-width="10" stroke-linecap="round"/>
+
+  <g stroke-linecap="round">
+    <path d="M244 132h24M244 143h24" stroke="#67e8f9" stroke-width="8"/>
+    <path d="M365 309h19M374 300v19" stroke="#c4b5fd" stroke-width="8"/>
+  </g>
+</svg>
