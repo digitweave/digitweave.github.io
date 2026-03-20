@@ -213,6 +213,40 @@ h3 {
   border-color: #ef4444;
 }
 
+.collapsed-empty-row {
+  position: relative;
+  grid-column: 1 / -1;
+  min-height: clamp(1.85rem, 5vw, 2.5rem);
+  border: 1px dashed #2b4568;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgb(9 15 29 / 88%), rgb(12 21 39 / 92%));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+}
+
+.collapsed-empty-row::before {
+  content: "";
+  position: absolute;
+  inset: 50% 10px auto;
+  border-top: 1px dashed #365075;
+  transform: translateY(-50%);
+}
+
+.collapsed-empty-row__count {
+  position: relative;
+  z-index: 1;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #0d1830;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .hint {
   margin: 10px 0 0;
   color: var(--muted);

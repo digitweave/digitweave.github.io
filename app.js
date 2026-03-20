@@ -4,6 +4,7 @@ const APP_STATE_VERSION = 1;
 
 const DEFAULT_SETTINGS = {
   mode: "manual",
+  collapseEmptyRows: true,
   validatePairs: true,
   feedbackBeforeAppend: false,
   autoStrategy: "search",
@@ -82,6 +83,7 @@ const ui = {
   summaryAppends: document.querySelector("#summary-appends"),
   summaryElapsed: document.querySelector("#summary-elapsed"),
   modeSelect: document.querySelector("#mode-select"),
+  collapseEmptyRowsToggle: document.querySelector("#collapse-empty-rows-toggle"),
   validateToggle: document.querySelector("#validate-toggle"),
   feedbackToggle: document.querySelector("#feedback-toggle"),
   strategySelect: document.querySelector("#strategy-select"),
@@ -628,6 +630,88 @@ function renderSummary() {
   ui.summaryElapsed.textContent = formatDuration(currentElapsedMs());
 }
 
+function buildBoardRows(gameState) {
+  const rows = [];
+  for (let start = 0; start < gameState.cells.length; start += gameState.width) {
+    const cells = [];
+    for (
+      let index = start;
+      index < Math.min(start + gameState.width, gameState.cells.length);
+      index += 1
+    ) {
+      cells.push({ cell: gameState.cells[index], index });
+    }
+    rows.push({ cells });
+  }
+  return rows;
+}
+
+function isFullyCrossedRow(row) {
+  return row.cells.length > 0 && row.cells.every(({ cell }) => cell.crossed);
+}
+
+function buildRenderableBoardRows(gameState, collapseEmptyRows) {
+  const sourceRows = buildBoardRows(gameState);
+  if (!collapseEmptyRows) {
+    return sourceRows.map((row) => ({ type: "cells", cells: row.cells }));
+  }
+
+  const renderRows = [];
+  let emptyRun = [];
+
+  function flushEmptyRun() {
+    if (emptyRun.length === 0) {
+      return;
+    }
+    if (emptyRun.length === 1) {
+      renderRows.push({ type: "cells", cells: emptyRun[0].cells });
+    } else {
+      renderRows.push({ type: "collapsed-empty", hiddenRowCount: emptyRun.length });
+    }
+    emptyRun = [];
+  }
+
+  for (const row of sourceRows) {
+    if (isFullyCrossedRow(row)) {
+      emptyRun.push(row);
+      continue;
+    }
+    flushEmptyRun();
+    renderRows.push({ type: "cells", cells: row.cells });
+  }
+  flushEmptyRun();
+
+  return renderRows;
+}
+
+function renderCellButton(cell, index, oneSelected, candidateMap) {
+  const classes = ["cell"];
+  if (cell.crossed) {
+    classes.push("crossed");
+  }
+  if (selectedIndices.includes(index)) {
+    classes.push("selected");
+  }
+  if (oneSelected !== null && !cell.crossed && index !== oneSelected) {
+    if (candidateMap.get(index)) {
+      classes.push("candidate-valid");
+    } else if (settings.validatePairs) {
+      classes.push("candidate-invalid");
+    }
+  }
+  const label = cell.crossed ? "·" : String(cell.digit);
+  return `<button class="${classes.join(" ")}" data-index="${index}" type="button">${label}</button>`;
+}
+
+function renderCollapsedEmptyRow(hiddenRowCount) {
+  const label = hiddenRowCount === 1 ? "1 empty row" : `${hiddenRowCount} empty rows`;
+  return [
+    '<div class="collapsed-empty-row" aria-hidden="true">',
+    `<span class="collapsed-empty-row__count">${label}</span>`,
+    "</div>",
+  ].join("");
+}
+
 function renderBoard() {
   ui.board.style.setProperty("--board-width", String(state.width));
   const oneSelected = selectedIndices.length === 1 ? selectedIndices[0] : null;
@@ -644,24 +728,16 @@ function renderBoard() {
     }
   }
 
-  const tokens = state.cells.map((cell, index) => {
-    const classes = ["cell"];
-    if (cell.crossed) {
-      classes.push("crossed");
+  const tokens = [];
+  for (const row of buildRenderableBoardRows(state, settings.collapseEmptyRows)) {
+    if (row.type === "collapsed-empty") {
+      tokens.push(renderCollapsedEmptyRow(row.hiddenRowCount));
+      continue;
     }
-    if (selectedIndices.includes(index)) {
-      classes.push("selected");
+    for (const { cell, index } of row.cells) {
+      tokens.push(renderCellButton(cell, index, oneSelected, candidateMap));
     }
-    if (oneSelected !== null && !cell.crossed && index !== oneSelected) {
-      if (candidateMap.get(index)) {
-        classes.push("candidate-valid");
-      } else if (settings.validatePairs) {
-        classes.push("candidate-invalid");
-      }
-    }
-    const label = cell.crossed ? "·" : String(cell.digit);
-    return `<button class="${classes.join(" ")}" data-index="${index}" type="button">${label}</button>`;
-  });
+  }
   ui.board.innerHTML = tokens.join("");
 }
 
@@ -823,6 +899,9 @@ async function runAutoLoop() {
   autoRunning = true;
   autoRunStartedAt = Date.now();
   stopAutoRequested = false;
+  if (!hasWidePanelsLayout() && activeDrawer) {
+    closeDrawers();
+  }
   render();
   setMessage("Automatic play running…");
 
@@ -878,6 +957,7 @@ function handleCellClick(index) {
 
 function applySettingsToUI() {
   ui.modeSelect.value = settings.mode;
+  ui.collapseEmptyRowsToggle.checked = settings.collapseEmptyRows;
   ui.validateToggle.checked = settings.validatePairs;
   ui.feedbackToggle.checked = settings.feedbackBeforeAppend;
   ui.strategySelect.value = settings.autoStrategy;
@@ -891,6 +971,11 @@ function attachEvents() {
     settings.mode = ui.modeSelect.value;
     selectedIndices = [];
     setMessage(`Switched to ${settings.mode} mode.`);
+    render();
+  });
+
+  ui.collapseEmptyRowsToggle.addEventListener("change", () => {
+    settings.collapseEmptyRows = ui.collapseEmptyRowsToggle.checked;
     render();
   });
 
@@ -1130,6 +1215,7 @@ function loadSettings() {
     const delay = Number.isFinite(parsed.autoDelayMs) ? Number(parsed.autoDelayMs) : 350;
     return {
       mode: parsed.mode === "auto" ? "auto" : "manual",
+      collapseEmptyRows: parsed.collapseEmptyRows !== false,
       validatePairs: parsed.validatePairs !== false,
       feedbackBeforeAppend: parsed.feedbackBeforeAppend === true,
       autoStrategy: ["first", "max-future", "search"].includes(parsed.autoStrategy)

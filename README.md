@@ -6,6 +6,7 @@ A standalone, offline-capable browser version of the Numbers Game.
 
 - Manual and automatic play modes
 - Optional pair validation and non-revealing feedback mode
+- Collapsible empty-row runs to keep long boards readable
 - Undo/redo controls on the game board
 - Responsive UI (phone drawers, wide-screen side panels)
 - Installable PWA with local-only storage
@@ -13,11 +14,22 @@ A standalone, offline-capable browser version of the Numbers Game.
 ## Run locally
 
 ```bash
-cd web
-python3 -m http.server 8080
+npx --yes serve@latest . -l 8080
 ```
 
 Open `http://localhost:8080`.
+
+## Quick validation
+
+```bash
+node --check app.js
+node --check sw.js
+curl -I http://127.0.0.1:8080/
+curl -I http://127.0.0.1:8080/sw.js
+curl -I http://127.0.0.1:8080/manifest.webmanifest
+```
+
+For UI changes, also verify manual play, auto run/stop, persistence after reload, and the `Collapse empty rows` toggle in the browser.
 
 ## Publish on GitHub Pages
 
@@ -31,7 +43,7 @@ For a direct root URL with your organization:
 ## Credits
 
 - Original game idea and product direction: project creator
-- Implementation and engineering assistance: OpenAI Codex (`GPT-5.3-Codex`)
+- Implementation and engineering assistance: OpenAI Codex
 
 ## License
 
