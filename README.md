@@ -5,10 +5,11 @@ A standalone, offline-capable browser version of the Numbers Game.
 ## Features
 
 - Manual and automatic play modes
-- Optional pair validation and non-revealing feedback mode
+- Search-based Hint, optional pair validation, and feedback before append
 - Collapsible empty-row runs to keep long boards readable
 - Undo/redo controls on the game board
-- Responsive UI (phone drawers, wide-screen side panels)
+- Offscreen column shortcuts and a bottom toolbar on phones
+- Round summaries with pair accuracy and adjustable confetti
 - Installable PWA with local-only storage
 
 ## Run locally
@@ -17,16 +18,20 @@ A standalone, offline-capable browser version of the Numbers Game.
 npx --yes serve@latest . -l 8080
 ```
 
-Open `http://localhost:8080`.
+Open `http://127.0.0.1:8080/`.
 
 ## Quick validation
 
+With the server running, use a second terminal from the repository root.
+
 ```bash
 node --check app.js
+node --check game-rules.js
+node --check hint-worker.js
 node --check sw.js
-curl -I http://127.0.0.1:8080/
-curl -I http://127.0.0.1:8080/sw.js
-curl -I http://127.0.0.1:8080/manifest.webmanifest
+curl -fsSI http://127.0.0.1:8080/
+curl -fsSI http://127.0.0.1:8080/sw.js
+curl -fsSI http://127.0.0.1:8080/manifest.webmanifest
 ```
 
 For UI changes, also verify manual play, auto run/stop, persistence after reload, and the `Collapse empty rows` toggle in the browser.

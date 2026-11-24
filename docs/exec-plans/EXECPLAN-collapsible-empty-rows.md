@@ -1,6 +1,6 @@
 # Collapsible Empty Rows And Narrow-Screen Auto Run
 
-This ExecPlan is a living document and must be maintained in accordance with `PLANS.md` at the repository root.
+This ExecPlan follows [PLANS.md](../../PLANS.md).
 
 ## Purpose / Big Picture
 

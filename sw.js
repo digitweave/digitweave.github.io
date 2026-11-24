@@ -1,9 +1,11 @@
-const CACHE_NAME = "numbers-game-pwa-v6";
+const CACHE_NAME = "numbers-game-pwa-v15";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./game-rules.js",
+  "./hint-worker.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",

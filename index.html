@@ -54,11 +54,24 @@
               <path d="M18 12H9.9C7.2 12 5 14.2 5 16.9v.3"/>
             </svg>
           </button>
+          <button id="board-hint-btn" class="icon-btn" type="button" title="Hint" aria-label="Hint" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 15c0-1-.4-1.7-1.2-2.5a6 6 0 1 1 8.4 0c-.8.8-1.2 1.5-1.2 2.5M9 18h6m-5 3h4"/>
+            </svg>
+          </button>
           <span id="status-badge" class="status-badge">ACTIVE</span>
         </div>
       </div>
       <p id="message-line" class="message-line" aria-live="polite"></p>
-      <div id="board" class="board" role="grid" aria-label="Numbers board"></div>
+      <div class="board-window">
+        <div class="board-context-anchor board-context-anchor-above">
+          <div id="board-context-above" class="board-context" role="group" aria-label="Nearest digits above" hidden></div>
+        </div>
+        <div id="board" class="board" role="grid" aria-label="Numbers board"></div>
+        <div class="board-context-anchor board-context-anchor-below">
+          <div id="board-context-below" class="board-context" role="group" aria-label="Nearest digits below" hidden></div>
+        </div>
+      </div>
       <div id="board-manual-actions" class="board-manual-actions">
         <button id="board-save-round-btn" class="btn primary">Save Round / Append Remaining</button>
       </div>
@@ -100,8 +113,12 @@
           <span>Validate selected pair</span>
         </label>
         <label class="checkbox">
+          <input id="show-hint-toggle" type="checkbox" checked>
+          <span>Show Hint button</span>
+        </label>
+        <label class="checkbox">
           <input id="feedback-toggle" type="checkbox">
-          <span>Feedback before append (no hints)</span>
+          <span>Feedback before append</span>
         </label>
         <div class="button-row">
           <button id="save-round-btn" class="btn primary">Save Round / Append Remaining</button>
@@ -141,6 +158,13 @@
           <div class="inline-controls">
             <input id="width-input" type="number" min="3" max="18" step="1" value="9">
             <button id="new-width-btn" class="btn">Start</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <label for="confetti-amount">Amount of confetti</label>
+          <div class="inline-controls">
+            <input id="confetti-amount" type="range" min="0" max="32" step="1" value="8">
+            <output id="confetti-amount-value" for="confetti-amount">8 pieces</output>
           </div>
         </div>
       </details>
@@ -185,8 +209,10 @@
       <ul>
         <li>Visibility is in right/down directions and can pass over crossed cells.</li>
         <li>End of row continues into start of next row (same as CLI rules).</li>
-        <li>Manual mode lets you play yourself with optional validation.</li>
-        <li>Feedback mode never reveals pair locations; it only blocks append when pairs still exist.</li>
+        <li>Tap a digit at the top or bottom edge of a long board to jump to its offscreen cell.</li>
+        <li>For expert play, uncheck <code>Validate selected pair</code> to choose pairs freely. The result shows your pair accuracy.</li>
+        <li>Hint highlights one digit with a match. Use <code>Show Hint button</code> in Controls to hide or show it.</li>
+        <li>Feedback before append blocks appending while matching pairs remain.</li>
         <li>Auto mode supports strategies: <code>search</code>, <code>max-future</code>, <code>first</code>.</li>
         <li>Use <code>Collapse empty rows</code> in Controls to compress fully cleared row runs during long games.</li>
       </ul>
@@ -194,21 +220,47 @@
     </div>
   </aside>
 
-  <dialog id="summary-dialog">
-    <form method="dialog" class="dialog-card">
-      <h2>Game Summary</h2>
-      <p id="summary-result-line"></p>
+  <dialog id="summary-dialog" aria-labelledby="summary-title" aria-describedby="summary-result-line">
+    <form id="dialog-new-game-form" method="dialog" class="dialog-card">
+      <div class="finish-confetti" aria-hidden="true" hidden></div>
+      <header class="dialog-heading">
+        <h2 id="summary-title">Game finished</h2>
+        <p id="summary-result-line"></p>
+      </header>
+      <div class="dialog-scores">
+        <p class="dialog-score">
+          <strong id="final-score">0%</strong>
+          <span>Digits cleared</span>
+        </p>
+        <p class="dialog-score">
+          <strong id="final-accuracy">—</strong>
+          <span>Pair accuracy</span>
+          <small id="final-accuracy-detail"></small>
+        </p>
+      </div>
       <dl class="summary-list dialog-summary">
-        <div><dt>Status</dt><dd id="final-status">-</dd></div>
         <div><dt>Pairs crossed</dt><dd id="final-pairs">0</dd></div>
         <div><dt>Append steps</dt><dd id="final-appends">0</dd></div>
         <div><dt>Total cells</dt><dd id="final-cells">0</dd></div>
         <div><dt>Remaining</dt><dd id="final-remaining">0</dd></div>
         <div><dt>Duration</dt><dd id="final-duration">00:00</dd></div>
       </dl>
+      <div class="dialog-options">
+        <div class="control-group">
+          <label for="dialog-mode-select">Next game mode</label>
+          <select id="dialog-mode-select">
+            <option value="manual">Manual</option>
+            <option value="auto">Automatic</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="dialog-width-input">Board width</label>
+          <input id="dialog-width-input" type="number" min="3" max="18" step="1" value="9" required>
+        </div>
+      </div>
       <div class="button-row dialog-buttons">
-        <button id="dialog-new-game-btn" value="new" class="btn primary">New Game</button>
-        <button value="close" class="btn">Close</button>
+        <button type="submit" value="new" class="btn primary">Start new game</button>
+        <button type="submit" value="close" class="btn" formnovalidate autofocus>Keep board</button>
       </div>
     </form>
   </dialog>

@@ -1,16 +1,35 @@
+import {
+  PRNG,
+  appendRemainingDigits,
+  choosePair,
+  cloneState,
+  crossPairIndices,
+  findPairs,
+  isMatch,
+  pairKey,
+  remainingCount,
+  scanVisible,
+} from "./game-rules.js";
+
 const STORAGE_STATE_KEY = "numbers-game-web-state-v1";
 const STORAGE_SETTINGS_KEY = "numbers-game-web-settings-v1";
-const APP_STATE_VERSION = 1;
+const APP_STATE_VERSION = 2;
 
 const DEFAULT_SETTINGS = {
   mode: "manual",
   collapseEmptyRows: true,
   validatePairs: true,
+  showHintButton: true,
   feedbackBeforeAppend: false,
   autoStrategy: "search",
   autoDelayMs: 350,
   autoSeed: 1337,
+  confettiAmount: 8,
 };
+
+const MAX_CONFETTI_AMOUNT = 32;
+const CONFETTI_COLORS = ["#38bdf8", "#fbbf24", "#4ade80", "#f472b6", "#a78bfa"];
+const HINT_SEARCH_MESSAGE = "Finding a hint…";
 
 const SAFETY_LIMITS = {
   maxMoves: 20000,
@@ -18,30 +37,6 @@ const SAFETY_LIMITS = {
   maxAppends: 5000,
   maxRunMs: 600000,
 };
-
-class PRNG {
-  constructor(seed = 1337) {
-    this.state = seed >>> 0;
-    if (this.state === 0) {
-      this.state = 0x9e3779b9;
-    }
-  }
-
-  next() {
-    let value = (this.state += 0x6d2b79f5);
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  }
-
-  nextInt(maxExclusive) {
-    return Math.floor(this.next() * maxExclusive);
-  }
-
-  fork() {
-    return new PRNG(this.nextInt(0xffffffff));
-  }
-}
 
 /** @type {ReturnType<typeof createDefaultState>} */
 let state;
@@ -55,14 +50,23 @@ let deferredInstallPrompt = null;
 let historyPast = [];
 let historyFuture = [];
 let activeDrawer = null;
+let boardColumns = null;
+let columnContextFrame = null;
+let hintSearchWorker = null;
 
 const MAX_HISTORY_DEPTH = 400;
 const WIDE_PANELS_QUERY = window.matchMedia("(min-width: 1024px)");
 
 const ui = {
+  boardPanel: document.querySelector(".board-panel"),
+  boardToolbar: document.querySelector(".board-toolbar"),
+  boardWindow: document.querySelector(".board-window"),
   board: document.querySelector("#board"),
+  boardContextAbove: document.querySelector("#board-context-above"),
+  boardContextBelow: document.querySelector("#board-context-below"),
   boardManualActions: document.querySelector("#board-manual-actions"),
   boardSaveRoundBtn: document.querySelector("#board-save-round-btn"),
+  boardHintBtn: document.querySelector("#board-hint-btn"),
   messageLine: document.querySelector("#message-line"),
   statusBadge: document.querySelector("#status-badge"),
   openControlsBtn: document.querySelector("#open-controls-btn"),
@@ -85,11 +89,14 @@ const ui = {
   modeSelect: document.querySelector("#mode-select"),
   collapseEmptyRowsToggle: document.querySelector("#collapse-empty-rows-toggle"),
   validateToggle: document.querySelector("#validate-toggle"),
+  showHintToggle: document.querySelector("#show-hint-toggle"),
   feedbackToggle: document.querySelector("#feedback-toggle"),
   strategySelect: document.querySelector("#strategy-select"),
   delayRange: document.querySelector("#delay-range"),
   delayValue: document.querySelector("#delay-value"),
   widthInput: document.querySelector("#width-input"),
+  confettiAmountInput: document.querySelector("#confetti-amount"),
+  confettiAmountValue: document.querySelector("#confetti-amount-value"),
   manualControls: document.querySelector("#manual-controls"),
   autoControls: document.querySelector("#auto-controls"),
   saveRoundBtn: document.querySelector("#save-round-btn"),
@@ -101,14 +108,20 @@ const ui = {
   resetStorageBtn: document.querySelector("#reset-storage-btn"),
   installBtn: document.querySelector("#install-btn"),
   summaryDialog: document.querySelector("#summary-dialog"),
+  summaryTitle: document.querySelector("#summary-title"),
   summaryResultLine: document.querySelector("#summary-result-line"),
-  finalStatus: document.querySelector("#final-status"),
+  finishConfetti: document.querySelector(".finish-confetti"),
+  finalScore: document.querySelector("#final-score"),
+  finalAccuracy: document.querySelector("#final-accuracy"),
+  finalAccuracyDetail: document.querySelector("#final-accuracy-detail"),
   finalPairs: document.querySelector("#final-pairs"),
   finalAppends: document.querySelector("#final-appends"),
   finalCells: document.querySelector("#final-cells"),
   finalRemaining: document.querySelector("#final-remaining"),
   finalDuration: document.querySelector("#final-duration"),
-  dialogNewGameBtn: document.querySelector("#dialog-new-game-btn"),
+  dialogNewGameForm: document.querySelector("#dialog-new-game-form"),
+  dialogModeSelect: document.querySelector("#dialog-mode-select"),
+  dialogWidthInput: document.querySelector("#dialog-width-input"),
 };
 
 init();
@@ -129,6 +142,9 @@ function init() {
   applyResponsivePanelLayout();
   registerPWA();
   render();
+  if (state.status !== "active") {
+    showSummaryDialog();
+  }
   window.setInterval(() => {
     renderSummary();
   }, 1000);
@@ -158,6 +174,8 @@ function createDefaultState(width = 9, digits = defaultSeedDigits()) {
     cells: digits.map((digit) => ({ digit, crossed: false })),
     appendSteps: 0,
     pairMoves: 0,
+    validPairMoves: 0,
+    invalidPairMoves: 0,
     status: "active",
     startedAt: Date.now(),
     finishedAt: null,
@@ -170,249 +188,6 @@ function normalizeStatus(rawStatus) {
     return rawStatus;
   }
   return "active";
-}
-
-function cloneState(gameState) {
-  return {
-    ...gameState,
-    cells: gameState.cells.map((cell) => ({ digit: cell.digit, crossed: cell.crossed })),
-  };
-}
-
-function remainingCount(gameState) {
-  return gameState.cells.reduce((total, cell) => total + (cell.crossed ? 0 : 1), 0);
-}
-
-function remainingDigits(gameState) {
-  return gameState.cells.filter((cell) => !cell.crossed).map((cell) => cell.digit);
-}
-
-function isMatch(left, right) {
-  return left === right || left + right === 10;
-}
-
-function scanRight(gameState, startIndex) {
-  for (let index = startIndex + 1; index < gameState.cells.length; index += 1) {
-    if (!gameState.cells[index].crossed) {
-      return index;
-    }
-  }
-  return null;
-}
-
-function scanDown(gameState, startIndex) {
-  let index = startIndex + gameState.width;
-  while (index < gameState.cells.length) {
-    if (!gameState.cells[index].crossed) {
-      return index;
-    }
-    index += gameState.width;
-  }
-  return null;
-}
-
-function findPairs(gameState) {
-  /** @type {{ first: number; second: number; direction: "right" | "down"; reason: "equal" | "sum10" }[]} */
-  const pairs = [];
-  const seen = new Set();
-
-  for (let index = 0; index < gameState.cells.length; index += 1) {
-    const cell = gameState.cells[index];
-    if (cell.crossed) {
-      continue;
-    }
-
-    const scans = [
-      { direction: "right", scanner: scanRight },
-      { direction: "down", scanner: scanDown },
-    ];
-    for (const { direction, scanner } of scans) {
-      const neighbor = scanner(gameState, index);
-      if (neighbor === null) {
-        continue;
-      }
-
-      const key = `${index}:${neighbor}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      const left = gameState.cells[index].digit;
-      const right = gameState.cells[neighbor].digit;
-      if (!isMatch(left, right)) {
-        continue;
-      }
-
-      pairs.push({
-        first: index,
-        second: neighbor,
-        direction,
-        reason: left === right ? "equal" : "sum10",
-      });
-      seen.add(key);
-    }
-  }
-
-  return pairs;
-}
-
-function pairKey(first, second) {
-  return first < second ? `${first}:${second}` : `${second}:${first}`;
-}
-
-function crossPairIndices(gameState, first, second, force = false) {
-  if (first === second) {
-    throw new Error("Select two different cells.");
-  }
-  const firstCell = gameState.cells[first];
-  const secondCell = gameState.cells[second];
-  if (!firstCell || !secondCell) {
-    throw new Error("Selected pair is out of bounds.");
-  }
-  if (firstCell.crossed || secondCell.crossed) {
-    throw new Error("Selected cells are already crossed.");
-  }
-  if (!force && !isMatch(firstCell.digit, secondCell.digit)) {
-    throw new Error("Pair digits must be equal or sum to 10.");
-  }
-  firstCell.crossed = true;
-  secondCell.crossed = true;
-  gameState.pairMoves += 1;
-}
-
-function appendRemainingDigits(gameState) {
-  const digits = remainingDigits(gameState);
-  if (digits.length === 0) {
-    return 0;
-  }
-  for (const digit of digits) {
-    gameState.cells.push({ digit, crossed: false });
-  }
-  gameState.appendSteps += 1;
-  return digits.length;
-}
-
-function choosePairFirst(pairs) {
-  return pairs[0];
-}
-
-function choosePairMaxFuture(gameState, pairs, randomizer) {
-  let bestScore = -1;
-  let bestCandidates = [pairs[0]];
-  for (const pair of pairs) {
-    const simulated = cloneState(gameState);
-    crossPairIndices(simulated, pair.first, pair.second);
-    const score = findPairs(simulated).length;
-    if (score > bestScore) {
-      bestScore = score;
-      bestCandidates = [pair];
-    } else if (score === bestScore) {
-      bestCandidates.push(pair);
-    }
-  }
-  if (bestCandidates.length === 1) {
-    return bestCandidates[0];
-  }
-  return bestCandidates[randomizer.nextInt(bestCandidates.length)];
-}
-
-function rolloutScore(baseState, randomizer, maxMoves, maxAppends) {
-  const simulated = cloneState(baseState);
-  let moves = 0;
-  let appends = 0;
-
-  while (moves < maxMoves) {
-    const pairs = findPairs(simulated);
-    if (pairs.length > 0) {
-      const pair = choosePairMaxFuture(simulated, pairs, randomizer);
-      crossPairIndices(simulated, pair.first, pair.second);
-      moves += 1;
-      continue;
-    }
-
-    if (remainingCount(simulated) === 0) {
-      return 100000 - appends * 100 - moves;
-    }
-    if (appends >= maxAppends) {
-      break;
-    }
-    const added = appendRemainingDigits(simulated);
-    appends += 1;
-    if (added === 0 || findPairs(simulated).length === 0) {
-      break;
-    }
-  }
-
-  return -(
-    remainingCount(simulated) +
-    appends * 15 +
-    simulated.cells.length * 0.05
-  );
-}
-
-function choosePairSearch(gameState, pairs, randomizer) {
-  if (pairs.length === 1) {
-    return pairs[0];
-  }
-
-  let rolloutCount;
-  let rolloutMoves;
-  let rolloutAppends;
-  if (gameState.cells.length <= 180) {
-    rolloutCount = 7;
-    rolloutMoves = 70;
-    rolloutAppends = 2;
-  } else if (gameState.cells.length <= 400) {
-    rolloutCount = 5;
-    rolloutMoves = 45;
-    rolloutAppends = 2;
-  } else {
-    rolloutCount = 3;
-    rolloutMoves = 30;
-    rolloutAppends = 1;
-  }
-
-  const candidates = pairs
-    .map((pair) => {
-      const simulated = cloneState(gameState);
-      crossPairIndices(simulated, pair.first, pair.second);
-      return {
-        pair,
-        simulated,
-        immediateScore: findPairs(simulated).length,
-      };
-    })
-    .sort((left, right) => right.immediateScore - left.immediateScore)
-    .slice(0, 6);
-
-  let bestPair = candidates[0].pair;
-  let bestScore = Number.NEGATIVE_INFINITY;
-  for (const candidate of candidates) {
-    let total = candidate.immediateScore * 0.5;
-    for (let index = 0; index < rolloutCount; index += 1) {
-      total += rolloutScore(
-        candidate.simulated,
-        randomizer.fork(),
-        rolloutMoves,
-        rolloutAppends,
-      );
-    }
-    const average = total / (rolloutCount + 0.5);
-    if (average > bestScore) {
-      bestScore = average;
-      bestPair = candidate.pair;
-    }
-  }
-  return bestPair;
-}
-
-function choosePair(gameState, pairs, strategy, randomizer) {
-  if (strategy === "first") {
-    return choosePairFirst(pairs);
-  }
-  if (strategy === "max-future") {
-    return choosePairMaxFuture(gameState, pairs, randomizer);
-  }
-  return choosePairSearch(gameState, pairs, randomizer);
 }
 
 function currentElapsedMs() {
@@ -477,6 +252,9 @@ function redoMove() {
   applyHistoricalState(next);
   setMessage("Redid move.");
   render();
+  if (state.status !== "active") {
+    showSummaryDialog();
+  }
 }
 
 function hasWidePanelsLayout() {
@@ -585,6 +363,7 @@ function closeDrawers() {
 }
 
 function render() {
+  cancelHintSearch();
   renderModePanels();
   renderBoard();
   renderSummary();
@@ -598,6 +377,8 @@ function renderModePanels() {
   ui.manualControls.classList.toggle("hidden", !manual);
   ui.autoControls.classList.toggle("hidden", manual);
   ui.boardManualActions.classList.toggle("hidden", !manual);
+  ui.boardHintBtn.hidden = !manual || !settings.showHintButton;
+  ui.boardHintBtn.disabled = state.status !== "active" || autoRunning || hintSearchWorker !== null;
 
   ui.saveRoundBtn.disabled = !manual || state.status !== "active" || autoRunning;
   ui.boardSaveRoundBtn.disabled = !manual || state.status !== "active" || autoRunning;
@@ -684,7 +465,7 @@ function buildRenderableBoardRows(gameState, collapseEmptyRows) {
   return renderRows;
 }
 
-function renderCellButton(cell, index, oneSelected, candidateMap) {
+function renderCellButton(cell, index, candidateMap) {
   const classes = ["cell"];
   if (cell.crossed) {
     classes.push("crossed");
@@ -692,12 +473,8 @@ function renderCellButton(cell, index, oneSelected, candidateMap) {
   if (selectedIndices.includes(index)) {
     classes.push("selected");
   }
-  if (oneSelected !== null && !cell.crossed && index !== oneSelected) {
-    if (candidateMap.get(index)) {
-      classes.push("candidate-valid");
-    } else if (settings.validatePairs) {
-      classes.push("candidate-invalid");
-    }
+  if (candidateMap.has(index)) {
+    classes.push(candidateMap.get(index) ? "candidate-valid" : "candidate-invalid");
   }
   const label = cell.crossed ? "·" : String(cell.digit);
   return `<button class="${classes.join(" ")}" data-index="${index}" type="button">${label}</button>`;
@@ -713,17 +490,15 @@ function renderCollapsedEmptyRow(hiddenRowCount) {
 }
 
 function renderBoard() {
-  ui.board.style.setProperty("--board-width", String(state.width));
-  const oneSelected = selectedIndices.length === 1 ? selectedIndices[0] : null;
-  const possiblePairs = oneSelected === null ? [] : findPairs(state);
+  ui.boardWindow.style.setProperty("--board-width", String(state.width));
   const candidateMap = new Map();
-
-  if (oneSelected !== null) {
-    for (const pair of possiblePairs) {
-      if (pair.first === oneSelected) {
-        candidateMap.set(pair.second, true);
-      } else if (pair.second === oneSelected) {
-        candidateMap.set(pair.first, true);
+  if (settings.validatePairs && selectedIndices.length === 1) {
+    const [selected] = selectedIndices;
+    const digit = state.cells[selected].digit;
+    for (const step of [-1, 1, -state.width, state.width]) {
+      const neighbor = scanVisible(state, selected, step);
+      if (neighbor !== null) {
+        candidateMap.set(neighbor, isMatch(digit, state.cells[neighbor].digit));
       }
     }
   }
@@ -735,10 +510,160 @@ function renderBoard() {
       continue;
     }
     for (const { cell, index } of row.cells) {
-      tokens.push(renderCellButton(cell, index, oneSelected, candidateMap));
+      tokens.push(renderCellButton(cell, index, candidateMap));
     }
   }
   ui.board.innerHTML = tokens.join("");
+  boardColumns = null;
+  scheduleColumnContext();
+}
+
+function collectBoardColumns() {
+  const columns = Array.from({ length: state.width }, () => []);
+  for (const cell of ui.board.querySelectorAll(".cell:not(.crossed)")) {
+    columns[Number(cell.dataset.index) % state.width].push(cell);
+  }
+  return columns;
+}
+
+function findColumnBoundary(cells, precedesBoundary) {
+  let start = 0;
+  let end = cells.length;
+  while (start < end) {
+    const middle = Math.floor((start + end) / 2);
+    if (precedesBoundary(cells[middle].getBoundingClientRect())) {
+      start = middle + 1;
+    } else {
+      end = middle;
+    }
+  }
+  return start;
+}
+
+function renderColumnContext(row, direction, cells) {
+  row.hidden = !cells.some(Boolean);
+  if (row.hidden) {
+    return;
+  }
+  const markup = cells.map((cell, column) => {
+    if (!cell) {
+      return "<span></span>";
+    }
+    const label = `Jump to ${cell.textContent} ${direction} in column ${column + 1}`;
+    return `<button type="button" class="board-context-digit" data-context-index="${cell.dataset.index}" aria-label="${label}" title="${label}">${cell.textContent}</button>`;
+  }).join("");
+  if (row.innerHTML !== markup) {
+    row.innerHTML = markup;
+  }
+}
+
+function updateColumnContext() {
+  columnContextFrame = null;
+  const panel = hasWidePanelsLayout() ? ui.boardPanel : null;
+  const top = panel ? panel.getBoundingClientRect().top + panel.clientTop : 0;
+  const bottom = panel ? top + panel.clientHeight : ui.boardToolbar.getBoundingClientRect().top;
+
+  const board = ui.board.getBoundingClientRect();
+  const visible = board.bottom > top && board.top < bottom;
+  const showAbove = visible && board.top < top;
+  const showBelow = visible && board.bottom > bottom;
+  if (showAbove || showBelow) {
+    boardColumns ??= collectBoardColumns();
+  }
+  const above = showAbove
+    ? boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.bottom <= top) - 1])
+    : [];
+  const below = showBelow
+    ? boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.top < bottom)])
+    : [];
+  renderColumnContext(ui.boardContextAbove, "above", above);
+  renderColumnContext(ui.boardContextBelow, "below", below);
+}
+
+function scheduleColumnContext() {
+  if (columnContextFrame === null) {
+    columnContextFrame = requestAnimationFrame(updateColumnContext);
+  }
+}
+
+function jumpToColumnDigit(event) {
+  const target = event.target instanceof Element ? event.target.closest("[data-context-index]") : null;
+  if (!target) {
+    return;
+  }
+  const cell = ui.board.querySelector(`[data-index="${target.dataset.contextIndex}"]`);
+  if (cell) {
+    cell.focus({ preventScroll: true });
+    cell.scrollIntoView({ block: "center", inline: "nearest" });
+  }
+}
+
+function showBoardHint() {
+  if (ui.boardHintBtn.hidden || ui.boardHintBtn.disabled) {
+    return;
+  }
+
+  const pairs = findPairs(state);
+  if (pairs.length === 0) {
+    setMessage("No matching pairs are available.");
+    return;
+  }
+
+  if (pairs.length === 1) {
+    revealHint(pairs[0]);
+    return;
+  }
+
+  let worker;
+  try {
+    worker = new Worker(new URL("./hint-worker.js", import.meta.url), { type: "module" });
+  } catch {
+    setMessage("Could not search for a hint.", "warn");
+    return;
+  }
+
+  hintSearchWorker = worker;
+  renderModePanels();
+  setMessage(HINT_SEARCH_MESSAGE);
+
+  const finish = () => {
+    if (hintSearchWorker !== worker) {
+      return false;
+    }
+    cancelHintSearch();
+    renderModePanels();
+    return true;
+  };
+
+  worker.addEventListener("message", ({ data: pair }) => {
+    if (finish()) {
+      revealHint(pair);
+    }
+  });
+  worker.addEventListener("error", () => {
+    if (finish()) {
+      setMessage("Could not search for a hint.", "warn");
+    }
+  });
+  worker.postMessage({ gameState: state, pairs, seed: settings.autoSeed });
+}
+
+function cancelHintSearch() {
+  if (hintSearchWorker) {
+    hintSearchWorker.terminate();
+    hintSearchWorker = null;
+    if (ui.messageLine.textContent === HINT_SEARCH_MESSAGE) {
+      setMessage("");
+    }
+  }
+}
+
+function revealHint(pair) {
+  const digitButton = ui.board.querySelector(`[data-index="${pair.first}"]`);
+  digitButton.classList.add("hinted");
+  digitButton.setAttribute("aria-label", `Digit ${state.cells[pair.first].digit} has a match`);
+  digitButton.focus({ preventScroll: true });
+  digitButton.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 function isLegalVisiblePair(first, second) {
@@ -770,13 +695,17 @@ function tryCrossSelected() {
 
   try {
     pushHistorySnapshot();
-    crossPairIndices(state, first, second, !settings.validatePairs && !legalPair);
+    crossPairIndices(state, first, second, !legalPair);
     selectedIndices = [];
     const note = legalPair
       ? `Crossed ${first + 1} and ${second + 1} (${legalPair.reason}).`
       : `Crossed ${first + 1} and ${second + 1} (validation disabled).`;
     setMessage(note, "good");
-    render();
+    if (remainingCount(state) === 0) {
+      finishGame("solved", "All digits are crossed.");
+    } else {
+      render();
+    }
     return true;
   } catch (error) {
     setMessage(error instanceof Error ? error.message : "Unable to cross selected pair.", "warn");
@@ -793,7 +722,7 @@ function finishGame(status, reason) {
   stopAutoRequested = false;
   selectedIndices = [];
   render();
-  showSummaryDialog();
+  showSummaryDialog({ celebrate: true });
 }
 
 function manualSaveRound() {
@@ -860,6 +789,10 @@ function runAutoStep() {
       `Auto crossed ${pair.first + 1} and ${pair.second + 1} (${pair.reason}, ${pair.direction}).`,
       "good",
     );
+    if (remainingCount(state) === 0) {
+      finishGame("solved", "All digits are crossed.");
+      return "finished";
+    }
     render();
     return "pair";
   }
@@ -959,11 +892,19 @@ function applySettingsToUI() {
   ui.modeSelect.value = settings.mode;
   ui.collapseEmptyRowsToggle.checked = settings.collapseEmptyRows;
   ui.validateToggle.checked = settings.validatePairs;
+  ui.showHintToggle.checked = settings.showHintButton;
   ui.feedbackToggle.checked = settings.feedbackBeforeAppend;
   ui.strategySelect.value = settings.autoStrategy;
   ui.delayRange.value = String(settings.autoDelayMs);
   ui.delayValue.textContent = `${settings.autoDelayMs} ms`;
   ui.widthInput.value = String(state.width);
+  ui.confettiAmountInput.value = String(settings.confettiAmount);
+  renderConfettiAmount();
+}
+
+function renderConfettiAmount() {
+  const amount = settings.confettiAmount;
+  ui.confettiAmountValue.textContent = amount === 0 ? "Off" : `${amount} ${amount === 1 ? "piece" : "pieces"}`;
 }
 
 function attachEvents() {
@@ -984,6 +925,11 @@ function attachEvents() {
     render();
   });
 
+  ui.showHintToggle.addEventListener("change", () => {
+    settings.showHintButton = ui.showHintToggle.checked;
+    render();
+  });
+
   ui.feedbackToggle.addEventListener("change", () => {
     settings.feedbackBeforeAppend = ui.feedbackToggle.checked;
     render();
@@ -1000,13 +946,19 @@ function attachEvents() {
     saveSettings();
   });
 
+  ui.confettiAmountInput.addEventListener("input", () => {
+    settings.confettiAmount = ui.confettiAmountInput.valueAsNumber;
+    renderConfettiAmount();
+    saveSettings();
+  });
+
   ui.newGameBtn.addEventListener("click", () => {
     startNewGame(state.width);
   });
 
   ui.newWidthBtn.addEventListener("click", () => {
-    const width = Number(ui.widthInput.value);
-    if (!Number.isInteger(width) || width < 3 || width > 18) {
+    const width = ui.widthInput.valueAsNumber;
+    if (!ui.widthInput.validity.valid || !Number.isInteger(width)) {
       setMessage("Width must be an integer from 3 to 18.", "warn");
       return;
     }
@@ -1020,6 +972,8 @@ function attachEvents() {
   ui.boardSaveRoundBtn.addEventListener("click", () => {
     manualSaveRound();
   });
+
+  ui.boardHintBtn.addEventListener("click", showBoardHint);
 
   ui.autoStepBtn.addEventListener("click", () => {
     if (state.status !== "active") {
@@ -1068,6 +1022,7 @@ function attachEvents() {
   const onWidePanelsChanged = () => {
     applyResponsivePanelLayout();
     renderModePanels();
+    scheduleColumnContext();
   };
   if (typeof WIDE_PANELS_QUERY.addEventListener === "function") {
     WIDE_PANELS_QUERY.addEventListener("change", onWidePanelsChanged);
@@ -1101,15 +1056,23 @@ function attachEvents() {
     const index = Number(cellButton.getAttribute("data-index"));
     handleCellClick(index);
   });
+  ui.boardWindow.addEventListener("click", jumpToColumnDigit);
+  ui.boardPanel.addEventListener("scroll", scheduleColumnContext, { passive: true });
+  window.addEventListener("scroll", scheduleColumnContext, { passive: true });
+  window.addEventListener("resize", scheduleColumnContext);
 
   ui.summaryDialog.addEventListener("close", () => {
     saveState();
   });
 
-  ui.dialogNewGameBtn.addEventListener("click", (event) => {
+  ui.dialogNewGameForm.addEventListener("submit", (event) => {
+    if (event.submitter?.value === "close") {
+      return;
+    }
     event.preventDefault();
-    ui.summaryDialog.close();
-    startNewGame(state.width);
+    settings.mode = ui.dialogModeSelect.value;
+    startNewGame(ui.dialogWidthInput.valueAsNumber);
+    ui.board.querySelector("button")?.focus();
   });
 
   ui.installBtn.addEventListener("click", async () => {
@@ -1132,23 +1095,68 @@ function startNewGame(width) {
   state = createDefaultState(width);
   clearHistory();
   closeDrawers();
-  ui.widthInput.value = String(width);
+  if (ui.summaryDialog.open) {
+    ui.summaryDialog.close();
+  }
+  applySettingsToUI();
   setMessage("New game started.");
   render();
 }
 
-function showSummaryDialog() {
+function showSummaryDialog({ celebrate = false } = {}) {
+  const remaining = remainingCount(state);
+  const total = state.cells.length;
+  const score = remaining === 0 ? 100 : Math.floor((100 * (total - remaining)) / total);
+  ui.summaryTitle.textContent = state.status === "solved" ? "Board cleared" : "Game finished";
   ui.summaryResultLine.textContent = state.resultReason || "Game finished.";
-  ui.finalStatus.textContent = state.status.toUpperCase();
+  ui.finalScore.textContent = `${score}%`;
+  renderPairAccuracy();
   ui.finalPairs.textContent = String(state.pairMoves);
   ui.finalAppends.textContent = String(state.appendSteps);
-  ui.finalCells.textContent = String(state.cells.length);
-  ui.finalRemaining.textContent = String(remainingCount(state));
+  ui.finalCells.textContent = String(total);
+  ui.finalRemaining.textContent = String(remaining);
   ui.finalDuration.textContent = formatDuration(currentElapsedMs());
 
   if (!ui.summaryDialog.open) {
+    ui.dialogModeSelect.value = settings.mode;
+    ui.dialogWidthInput.value = String(state.width);
+    if (!ui.dialogWidthInput.validity.valid) {
+      ui.dialogWidthInput.value = ui.dialogWidthInput.defaultValue;
+    }
+    renderFinishConfetti(celebrate ? settings.confettiAmount : 0);
     ui.summaryDialog.showModal();
   }
+}
+
+function renderFinishConfetti(amount) {
+  const particles = Array.from({ length: amount }, (_, index) => {
+    const particle = document.createElement("span");
+    if (index >= DEFAULT_SETTINGS.confettiAmount) {
+      particle.style.setProperty("--confetti-x", `${6 + (index * 37) % 88}%`);
+      particle.style.setProperty("--confetti-color", CONFETTI_COLORS[index % CONFETTI_COLORS.length]);
+      particle.style.setProperty("--confetti-delay", `${25 + (index * 43) % 220}ms`);
+    }
+    return particle;
+  });
+  ui.finishConfetti.replaceChildren(...particles);
+  ui.finishConfetti.hidden = amount === 0;
+}
+
+function renderPairAccuracy() {
+  const scored = state.validPairMoves + state.invalidPairMoves;
+  const unscored = state.pairMoves - scored;
+  ui.finalAccuracy.textContent = scored > 0
+    ? `${Math.floor((100 * state.validPairMoves) / scored)}%`
+    : "—";
+
+  const detail = [];
+  if (scored > 0) {
+    detail.push(`${state.validPairMoves} of ${scored} valid`);
+  }
+  if (unscored > 0) {
+    detail.push(`${unscored} unscored`);
+  }
+  ui.finalAccuracyDetail.textContent = detail.join(" · ") || "No crossings";
 }
 
 function saveState() {
@@ -1189,12 +1197,20 @@ function loadState() {
     if (cells.length !== parsed.cells.length || parsed.width <= 0) {
       return null;
     }
+    const savedPairMoves = Number(parsed.pairMoves ?? 0);
+    const pairMoves = Number.isSafeInteger(savedPairMoves) && savedPairMoves >= 0 ? savedPairMoves : 0;
+    const hasAccuracy = Number(parsed.version) === APP_STATE_VERSION
+      && Number.isSafeInteger(parsed.validPairMoves) && parsed.validPairMoves >= 0
+      && Number.isSafeInteger(parsed.invalidPairMoves) && parsed.invalidPairMoves >= 0
+      && parsed.validPairMoves + parsed.invalidPairMoves <= pairMoves;
     return {
-      version: Number(parsed.version ?? APP_STATE_VERSION),
+      version: APP_STATE_VERSION,
       width: Number(parsed.width),
       cells,
       appendSteps: Number(parsed.appendSteps ?? 0),
-      pairMoves: Number(parsed.pairMoves ?? 0),
+      pairMoves,
+      validPairMoves: hasAccuracy ? parsed.validPairMoves : 0,
+      invalidPairMoves: hasAccuracy ? parsed.invalidPairMoves : 0,
       status: normalizeStatus(parsed.status),
       startedAt: Number(parsed.startedAt ?? Date.now()),
       finishedAt: parsed.finishedAt ? Number(parsed.finishedAt) : null,
@@ -1217,12 +1233,15 @@ function loadSettings() {
       mode: parsed.mode === "auto" ? "auto" : "manual",
       collapseEmptyRows: parsed.collapseEmptyRows !== false,
       validatePairs: parsed.validatePairs !== false,
+      showHintButton: parsed.showHintButton !== false,
       feedbackBeforeAppend: parsed.feedbackBeforeAppend === true,
       autoStrategy: ["first", "max-future", "search"].includes(parsed.autoStrategy)
         ? parsed.autoStrategy
         : "search",
       autoDelayMs: Math.max(0, Math.min(1500, delay)),
       autoSeed: Number.isInteger(parsed.autoSeed) ? Number(parsed.autoSeed) : 1337,
+      confettiAmount: Number.isInteger(parsed.confettiAmount) && parsed.confettiAmount >= 0
+        && parsed.confettiAmount <= MAX_CONFETTI_AMOUNT ? parsed.confettiAmount : DEFAULT_SETTINGS.confettiAmount,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
