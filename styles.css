@@ -226,7 +226,7 @@ h3 {
 .board-context-digit,
 .board-context > span {
   min-width: 0;
-  height: 22px;
+  height: var(--board-context-height, 22px);
   border-radius: 4px;
 }
 

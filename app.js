@@ -560,22 +560,36 @@ function renderColumnContext(row, direction, cells) {
 function updateColumnContext() {
   columnContextFrame = null;
   const panel = hasWidePanelsLayout() ? ui.boardPanel : null;
-  const top = panel ? panel.getBoundingClientRect().top + panel.clientTop : 0;
-  const bottom = panel ? top + panel.clientHeight : ui.boardToolbar.getBoundingClientRect().top;
-
+  const viewportTop = panel ? panel.getBoundingClientRect().top + panel.clientTop : 0;
+  const viewportBottom = panel ? viewportTop + panel.clientHeight : ui.boardToolbar.getBoundingClientRect().top;
+  const top = Math.max(viewportTop, ui.boardContextAbove.parentElement.getBoundingClientRect().top);
+  const bottom = Math.min(viewportBottom, ui.boardContextBelow.parentElement.getBoundingClientRect().top);
   const board = ui.board.getBoundingClientRect();
-  const visible = board.bottom > top && board.top < bottom;
-  const showAbove = visible && board.top < top;
-  const showBelow = visible && board.bottom > bottom;
-  if (showAbove || showBelow) {
+  const firstCell = ui.board.querySelector(".cell");
+  const stripHeight = Math.min(22, firstCell?.getBoundingClientRect().height ?? 0);
+  const fits = stripHeight > 0 && bottom - top > 2 * stripHeight;
+
+  let above = [];
+  let below = [];
+  let clipTop = 0;
+  let clipBottom = 0;
+  if (fits && (board.top < top || board.bottom > bottom)) {
     boardColumns ??= collectBoardColumns();
+    // Use the anchors to decide when strips appear, then find digits at their inner edges.
+    if (board.top < top && boardColumns.some(cells => cells[0]?.getBoundingClientRect().top < top)) {
+      const edge = top + stripHeight;
+      above = boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.top < edge) - 1]);
+      clipTop = edge - board.top;
+    }
+    if (board.bottom > bottom && boardColumns.some(cells => cells.at(-1)?.getBoundingClientRect().bottom > bottom)) {
+      const edge = bottom - stripHeight;
+      below = boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.bottom <= edge)]);
+      clipBottom = board.bottom - edge;
+    }
   }
-  const above = showAbove
-    ? boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.bottom <= top) - 1])
-    : [];
-  const below = showBelow
-    ? boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.top < bottom)])
-    : [];
+
+  ui.boardWindow.style.setProperty("--board-context-height", `${stripHeight}px`);
+  ui.board.style.clipPath = clipTop || clipBottom ? `inset(${clipTop}px 0 ${clipBottom}px)` : "";
   renderColumnContext(ui.boardContextAbove, "above", above);
   renderColumnContext(ui.boardContextBelow, "below", below);
 }

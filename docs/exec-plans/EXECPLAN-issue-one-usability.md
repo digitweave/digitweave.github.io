@@ -19,6 +19,8 @@ and Controls at the bottom. Advanced Setup lets players set confetti from
   feedback, column context, mobile controls, and the confetti setting.
 - [x] (2026-11-24 10:19 UTC) Verify browser behavior and the offline cache
   upgrade.
+- [x] (2026-11-24 12:24 UTC) Correct the column indicators at the visible
+  edge and verify that the strips and board digits occupy separate areas.
 
 ## Surprises and discoveries
 
@@ -27,6 +29,8 @@ and Controls at the bottom. Advanced Setup lets players set confetti from
   identified by the same scan the game uses for pair visibility.
 - Wide boards scroll inside `.board-panel`, and narrow boards scroll with
   the document. Fully crossed rows can collapse out of the normal grid.
+- The original indicators wait for a digit to clear the raw scroll area.
+  A sticky strip can cover the next digit before that threshold is reached.
 
 ## Decision log
 
@@ -39,6 +43,10 @@ and Controls at the bottom. Advanced Setup lets players set confetti from
 - 2026-11-24, Codex. Reposition the existing mobile toolbar and retain its
   actions. Persist the confetti amount in the existing settings and keep
   reduced-motion behavior. [GitHub issue #1](https://github.com/digitweave/digitweave.github.io/issues/1)
+- 2026-11-24, Codex. Fit the strips to the rendered digit size and use the
+  strips' inner boundaries to find the closest clipped digits. Give the
+  strips their own visible bands through clipping while leaving the board's
+  flow height in place.
 
 ## Context and milestones
 
@@ -86,3 +94,8 @@ and exercise reduced motion and offline operation after upgrading the worker.
   and restored the round on reload. The v11 cache was retired.
 - JavaScript syntax, scoped whitespace, static HTTP, and the manual and
   automatic finish, append, history, and reset smoke checks passed.
+- In Chromium, both indicators switched to a partly clipped digit at the
+  inner strip edge. Dense 18-column boards used smaller strips, blank slots
+  stayed clear of underlying cells, and the board's scroll height stayed
+  steady. Short boards used the full view. Jump navigation, mobile controls,
+  and play checks passed. The v15-to-v16 upgrade served the fix offline.
