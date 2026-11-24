@@ -1,6 +1,15 @@
 # DigitWeave Numbers Game (Browser + PWA)
 
+[![Open in Dev Containers](https://img.shields.io/static/v1?label=Dev%20Containers&message=Open&color=blue)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/digitweave/digitweave.github.io)
+
 A standalone, offline-capable browser version of the Numbers Game.
+
+## Live site
+
+The game is live on GitHub Pages. [Play DigitWeave](https://digitweave.github.io/)
+
+GitHub Pages publishes the static files from the repository root when changes
+are pushed to `main`. [View deployment runs](https://github.com/digitweave/digitweave.github.io/actions/workflows/pages/pages-build-deployment)
 
 ## Features
 
@@ -35,15 +44,6 @@ curl -fsSI http://127.0.0.1:8080/manifest.webmanifest
 ```
 
 For UI changes, also verify manual play, auto run/stop, persistence after reload, and the `Collapse empty rows` toggle in the browser.
-
-## Publish on GitHub Pages
-
-For a direct root URL with your organization:
-
-1. Create repository: `digitweave.github.io` under `digitweave`
-2. Push this folder content as the repository root
-3. Enable Pages (GitHub Actions or branch source)
-4. Site URL becomes: `https://digitweave.github.io/`
 
 ## Credits
 
