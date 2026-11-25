@@ -573,15 +573,16 @@ function updateColumnContext() {
   let below = [];
   let clipTop = 0;
   let clipBottom = 0;
-  if (fits && (board.top < top || board.bottom > bottom)) {
+  if (fits && (board.top < top || board.bottom > viewportBottom)) {
     boardColumns ??= collectBoardColumns();
-    // Use the anchors to decide when strips appear, then find digits at their inner edges.
     if (board.top < top && boardColumns.some(cells => cells[0]?.getBoundingClientRect().top < top)) {
       const edge = top + stripHeight;
       above = boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.top < edge) - 1]);
       clipTop = edge - board.top;
     }
-    if (board.bottom > bottom && boardColumns.some(cells => cells.at(-1)?.getBoundingClientRect().bottom > bottom)) {
+    // The sticky anchor can sit inside the visible area because of panel padding.
+    if (board.bottom > viewportBottom &&
+        boardColumns.some(cells => cells.at(-1)?.getBoundingClientRect().bottom > viewportBottom)) {
       const edge = bottom - stripHeight;
       below = boardColumns.map(cells => cells[findColumnBoundary(cells, rect => rect.bottom <= edge)]);
       clipBottom = board.bottom - edge;
